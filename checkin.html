@@ -1,0 +1,85 @@
+﻿<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>청소년부 출석 체크</title>
+</head>
+<body>
+    <h2>출석 체크</h2>
+
+    <select id="studentSelect"></select><br /><br />
+    <input id="nameInput" placeholder="이름 직접 입력 (선택)" /><br /><br />
+    <button id="btn">출석하기</button>
+
+    <p id="msg"></p>
+
+    <script type="module">
+        import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+
+        const SUPABASE_URL = "https://ketjtbjvtiveyswigtxb.supabase.co";
+        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtldGp0Ymp2dGl2ZXlzd2lndHhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2MTA0NTcsImV4cCI6MjA4NTE4NjQ1N30.3cUg9ZJM5Qf_VJAWvJgArPsG0XAXH7qigEAeJeDroOY";
+
+        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        const studentSelect = document.getElementById("studentSelect");
+        const nameInput = document.getElementById("nameInput");
+        const msg = document.getElementById("msg");
+
+        function kstDate() {
+            const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+            return d.toISOString().slice(0, 10);
+        }
+
+        async function loadStudents() {
+            const { data } = await supabase
+                .from("students")
+                .select("id,name")
+                .eq("is_active", true)
+                .order("name");
+
+            studentSelect.innerHTML = `<option value="">선택하세요</option>`;
+            data.forEach(s => {
+                const o = document.createElement("option");
+                o.value = s.id;
+                o.textContent = s.name;
+                studentSelect.appendChild(o);
+            });
+        }
+
+        document.getElementById("btn").onclick = async () => {
+            let studentId = studentSelect.value;
+            const name = nameInput.value.trim();
+
+            if (!studentId && !name) {
+                msg.innerText = "이름을 선택하거나 입력하세요.";
+                return;
+            }
+
+            if (!studentId) {
+                const { data } = await supabase
+                    .from("students")
+                    .insert({ name })
+                    .select()
+                    .single();
+                studentId = data.id;
+            }
+
+            const { error } = await supabase
+                .from("attendance")
+                .upsert({
+                    student_id: studentId,
+                    attend_date: kstDate()
+                }, {
+                    onConflict: "student_id,attend_date"
+                });
+
+            msg.innerText = error
+                ? "출석 실패"
+                : "출석 완료!";
+        };
+
+        loadStudents();
+    </script>
+</body>
+</html>
