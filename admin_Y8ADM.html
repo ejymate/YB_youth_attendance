@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ko">
 <head>
     <meta charset="utf-8" />
@@ -11,36 +11,46 @@
         }
 
         h2 {
-            margin-bottom: 8px;
+            margin-bottom: 6px;
         }
 
         .row {
-            margin: 12px 0;
+            margin: 10px 0;
         }
 
-        input, button {
-            padding: 8px 12px;
+        select, input, button {
+            padding: 6px 10px;
             margin-right: 6px;
         }
 
         table {
             border-collapse: collapse;
             width: 100%;
-            margin-top: 16px;
+            margin-top: 14px;
         }
 
         th, td {
             border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
+            padding: 6px;
+            text-align: center;
         }
 
         th {
             background: #f5f5f5;
         }
 
-        .small {
-            color: #666;
+        .present {
+            color: green;
+            font-weight: 700;
+        }
+
+        .absent {
+            color: #999;
+        }
+
+        .btn {
+            cursor: pointer;
+            padding: 4px 8px;
             font-size: 13px;
         }
     </style>
@@ -48,105 +58,186 @@
 <body>
 
     <h2>📋 청소년부 출석 관리자</h2>
-    <div class="small">※ 관리자 전용 페이지</div>
 
     <div class="row">
-        <label>조회 날짜:</label>
+        <label>날짜:</label>
         <input type="date" id="dateInput" />
-        <button onclick="loadAttendance()">조회</button>
-        <button onclick="downloadCSV()">CSV 다운로드</button>
+
+        <label>학년:</label>
+        <select id="gradeFilter">
+            <option value="">전체</option>
+        </select>
+
+        <button id="btnSearch">조회</button>
     </div>
 
-    <table id="table">
+    <table>
         <thead>
             <tr>
                 <th>이름</th>
                 <th>학년</th>
                 <th>반</th>
-                <th>출석 시간</th>
+                <th>출석 여부</th>
+                <th>관리</th>
             </tr>
         </thead>
-        <tbody></tbody>
+        <tbody id="tbody"></tbody>
     </table>
 
     <script type="module">
         import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
 
-        // 🔐 Supabase 정보
+        /*********************************************************
+         * Supabase 설정
+         *********************************************************/
         const SUPABASE_URL = "https://ketjtbjvtiveyswigtxb.supabase.co";
         const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtldGp0Ymp2dGl2ZXlzd2lndHhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2MTA0NTcsImV4cCI6MjA4NTE4NjQ1N30.3cUg9ZJM5Qf_VJAWvJgArPsG0XAXH7qigEAeJeDroOY";
-
         const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        const tbody = document.querySelector("#table tbody");
+        /*********************************************************
+         * DOM
+         *********************************************************/
+        const tbody = document.getElementById("tbody");
         const dateInput = document.getElementById("dateInput");
+        const gradeFilter = document.getElementById("gradeFilter");
+        const btnSearch = document.getElementById("btnSearch");
 
-        // 기본값: 오늘(KST)
+        /*********************************************************
+         * 유틸
+         *********************************************************/
         function todayKST() {
-            const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+            const d = new Date(
+                new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" })
+            );
             return d.toISOString().slice(0, 10);
         }
+
         dateInput.value = todayKST();
 
-        async function loadAttendance() {
-            const date = dateInput.value;
-            tbody.innerHTML = "";
-
+        /*********************************************************
+         * 학년 목록 로딩
+         *********************************************************/
+        async function loadGrades() {
             const { data, error } = await supabase
-                .from("attendance")
-                .select(`
-            attend_time,
-            students (
-              name,
-              grade,
-              class_name
-            )
-          `)
-                .eq("attend_date", date)
-                .order("attend_time", { ascending: true });
+                .from("students")
+                .select("grade")
+                .neq("grade", null);
 
             if (error) {
-                alert("조회 실패: " + error.message);
+                alert("학년 목록 조회 실패: " + error.message);
+                return;
+            }
+
+            const grades = [...new Set(data.map(d => d.grade))];
+            grades.forEach(g => {
+                const opt = document.createElement("option");
+                opt.value = g;
+                opt.textContent = g;
+                gradeFilter.appendChild(opt);
+            });
+        }
+
+        /*********************************************************
+         * 출석 데이터 조회
+         *********************************************************/
+        async function loadData() {
+            tbody.innerHTML = "";
+
+            const date = dateInput.value;
+            const grade = gradeFilter.value;
+
+            let query = supabase
+                .from("students")
+                .select(`
+            id,
+            name,
+            grade,
+            class_name,
+            attendance(attend_date)
+          `)
+                .eq("is_active", true);
+
+            if (grade) {
+                query = query.eq("grade", grade);
+            }
+
+            const { data, error } = await query.order("name");
+            if (error) {
+                alert("조회 오류: " + error.message);
                 return;
             }
 
             if (data.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="4">출석 데이터 없음</td></tr>`;
+                tbody.innerHTML =
+                    `<tr><td colspan="5">조회된 학생이 없습니다.</td></tr>`;
                 return;
             }
 
-            data.forEach(row => {
+            data.forEach(student => {
+                const isPresent =
+                    student.attendance.some(a => a.attend_date === date);
+
                 const tr = document.createElement("tr");
-                const time = new Date(row.attend_time).toLocaleTimeString("ko-KR");
                 tr.innerHTML = `
-            <td>${row.students.name}</td>
-            <td>${row.students.grade || ""}</td>
-            <td>${row.students.class_name || ""}</td>
-            <td>${time}</td>
+            <td>${student.name}</td>
+            <td>${student.grade || ""}</td>
+            <td>${student.class_name || ""}</td>
+            <td class="${isPresent ? "present" : "absent"}">
+              ${isPresent ? "출석" : "결석"}
+            </td>
+            <td>
+              <button class="btn" data-id="${student.id}" data-present="${isPresent}">
+                ${isPresent ? "결석 처리" : "출석 처리"}
+              </button>
+            </td>
           `;
                 tbody.appendChild(tr);
             });
         }
 
-        function downloadCSV() {
-            const rows = [["이름", "학년", "반", "출석시간"]];
-            document.querySelectorAll("#table tbody tr").forEach(tr => {
-                const cols = Array.from(tr.children).map(td => td.innerText);
-                rows.push(cols);
-            });
+        /*********************************************************
+         * 출석 토글 (이벤트 위임)
+         *********************************************************/
+        tbody.addEventListener("click", async (e) => {
+            const btn = e.target.closest("button");
+            if (!btn) return;
 
-            const csv = rows.map(r => r.join(",")).join("\n");
-            const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-            const url = URL.createObjectURL(blob);
+            const studentId = Number(btn.dataset.id);
+            const isPresent = btn.dataset.present === "true";
+            const date = dateInput.value;
 
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `attendance_${dateInput.value}.csv`;
-            a.click();
-            URL.revokeObjectURL(url);
-        }
+            if (isPresent) {
+                // 결석 처리
+                await supabase
+                    .from("attendance")
+                    .delete()
+                    .eq("student_id", studentId)
+                    .eq("attend_date", date);
+            } else {
+                // 출석 처리
+                await supabase
+                    .from("attendance")
+                    .upsert(
+                        { student_id: studentId, attend_date: date },
+                        { onConflict: "student_id,attend_date" }
+                    );
+            }
 
-        loadAttendance();
+            loadData();
+        });
+
+        /*********************************************************
+         * 이벤트 바인딩
+         *********************************************************/
+        btnSearch.addEventListener("click", loadData);
+        gradeFilter.addEventListener("change", loadData);
+        dateInput.addEventListener("change", loadData);
+
+        /*********************************************************
+         * 초기 로딩
+         *********************************************************/
+        await loadGrades();
+        await loadData();
     </script>
 
 </body>
