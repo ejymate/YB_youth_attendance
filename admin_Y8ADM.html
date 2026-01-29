@@ -1,0 +1,153 @@
+﻿<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>출석부 관리자</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            margin: 24px;
+        }
+
+        h2 {
+            margin-bottom: 8px;
+        }
+
+        .row {
+            margin: 12px 0;
+        }
+
+        input, button {
+            padding: 8px 12px;
+            margin-right: 6px;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 16px;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background: #f5f5f5;
+        }
+
+        .small {
+            color: #666;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>📋 청소년부 출석 관리자</h2>
+    <div class="small">※ 관리자 전용 페이지</div>
+
+    <div class="row">
+        <label>조회 날짜:</label>
+        <input type="date" id="dateInput" />
+        <button onclick="loadAttendance()">조회</button>
+        <button onclick="downloadCSV()">CSV 다운로드</button>
+    </div>
+
+    <table id="table">
+        <thead>
+            <tr>
+                <th>이름</th>
+                <th>학년</th>
+                <th>반</th>
+                <th>출석 시간</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <script type="module">
+        import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+
+        // 🔐 Supabase 정보
+        const SUPABASE_URL = "https://ketjtbjvtiveyswigtxb.supabase.co";
+        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtldGp0Ymp2dGl2ZXlzd2lndHhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2MTA0NTcsImV4cCI6MjA4NTE4NjQ1N30.3cUg9ZJM5Qf_VJAWvJgArPsG0XAXH7qigEAeJeDroOY";
+
+        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        const tbody = document.querySelector("#table tbody");
+        const dateInput = document.getElementById("dateInput");
+
+        // 기본값: 오늘(KST)
+        function todayKST() {
+            const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+            return d.toISOString().slice(0, 10);
+        }
+        dateInput.value = todayKST();
+
+        async function loadAttendance() {
+            const date = dateInput.value;
+            tbody.innerHTML = "";
+
+            const { data, error } = await supabase
+                .from("attendance")
+                .select(`
+            attend_time,
+            students (
+              name,
+              grade,
+              class_name
+            )
+          `)
+                .eq("attend_date", date)
+                .order("attend_time", { ascending: true });
+
+            if (error) {
+                alert("조회 실패: " + error.message);
+                return;
+            }
+
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4">출석 데이터 없음</td></tr>`;
+                return;
+            }
+
+            data.forEach(row => {
+                const tr = document.createElement("tr");
+                const time = new Date(row.attend_time).toLocaleTimeString("ko-KR");
+                tr.innerHTML = `
+            <td>${row.students.name}</td>
+            <td>${row.students.grade || ""}</td>
+            <td>${row.students.class_name || ""}</td>
+            <td>${time}</td>
+          `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function downloadCSV() {
+            const rows = [["이름", "학년", "반", "출석시간"]];
+            document.querySelectorAll("#table tbody tr").forEach(tr => {
+                const cols = Array.from(tr.children).map(td => td.innerText);
+                rows.push(cols);
+            });
+
+            const csv = rows.map(r => r.join(",")).join("\n");
+            const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `attendance_${dateInput.value}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        loadAttendance();
+    </script>
+
+</body>
+</html>
