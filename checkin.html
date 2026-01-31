@@ -4,15 +4,117 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>청소년부 출석 체크</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 400px;
+            width: 100%;
+        }
+        h2 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 24px;
+        }
+        select, input {
+            width: 100%;
+            padding: 15px;
+            margin-bottom: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        select:focus, input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        select:disabled {
+            background: #f5f5f5;
+            cursor: not-allowed;
+        }
+        #nameInput {
+            display: none;
+        }
+        #nameInput.show {
+            display: block;
+        }
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        #msg {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            font-weight: bold;
+            display: none;
+        }
+        #msg.success {
+            background: #d4edda;
+            color: #155724;
+            display: block;
+        }
+        #msg.error {
+            background: #f8d7da;
+            color: #721c24;
+            display: block;
+        }
+        #msg.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            display: block;
+        }
+    </style>
 </head>
 <body>
-    <h2>출석 체크</h2>
+    <div class="container">
+        <h2>🙏 청소년부 출석 체크</h2>
 
-    <select id="studentSelect"></select><br /><br />
-    <input id="nameInput" placeholder="이름 직접 입력 (선택)" /><br /><br />
-    <button id="btn">출석하기</button>
+        <select id="gradeSelect">
+            <option value="">학년을 선택하세요</option>
+        </select>
+        <select id="studentSelect" disabled>
+            <option value="">먼저 학년을 선택하세요</option>
+        </select>
+        <input id="nameInput" placeholder="이름을 입력하세요" />
+        <button id="btn">출석하기 ✓</button>
 
-    <p id="msg"></p>
+        <p id="msg"></p>
+    </div>
 
     <script type="module">
         import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
@@ -22,6 +124,7 @@
 
         const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+        const gradeSelect = document.getElementById("gradeSelect");
         const studentSelect = document.getElementById("studentSelect");
         const nameInput = document.getElementById("nameInput");
         const msg = document.getElementById("msg");
@@ -31,35 +134,120 @@
             return d.toISOString().slice(0, 10);
         }
 
-        async function loadStudents() {
+        function checkTimeAllowed() {
+            return { allowed: true }; // 시간 제한 해제
+            const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+            const day = now.getDay(); // 0 = 일요일
+            const hour = now.getHours();
+
+            if (day !== 0) {
+                return { allowed: false, message: "출석 체크는 일요일에만 가능합니다." };
+            }
+
+            if (hour < 10 || hour >= 12) {
+                return { allowed: false, message: "출석 체크는 일요일 오전 10시~12시에만 가능합니다." };
+            }
+
+            return { allowed: true };
+        }
+
+        function showMessage(text, type) {
+            msg.innerText = text;
+            msg.className = type;
+        }
+
+        async function loadGrades() {
+            const { data } = await supabase
+                .from("students")
+                .select("grade")
+                .eq("is_active", true)
+                .not("grade", "is", null);
+
+            const uniqueGrades = [...new Set(data.map(s => s.grade))].sort();
+
+            gradeSelect.innerHTML = `<option value="">학년을 선택하세요</option>`;
+            uniqueGrades.forEach(grade => {
+                const o = document.createElement("option");
+                o.value = grade;
+                o.textContent = grade;
+                gradeSelect.appendChild(o);
+            });
+        }
+
+        async function loadStudentsByGrade(grade) {
+            if (!grade) {
+                studentSelect.disabled = true;
+                studentSelect.innerHTML = `<option value="">먼저 학년을 선택하세요</option>`;
+                nameInput.classList.remove("show");
+                return;
+            }
+
             const { data } = await supabase
                 .from("students")
                 .select("id,name")
                 .eq("is_active", true)
+                .eq("grade", grade)
                 .order("name");
 
-            studentSelect.innerHTML = `<option value="">선택하세요</option>`;
+            studentSelect.disabled = false;
+            studentSelect.innerHTML = `<option value="">학생을 선택하세요</option>`;
             data.forEach(s => {
                 const o = document.createElement("option");
                 o.value = s.id;
                 o.textContent = s.name;
                 studentSelect.appendChild(o);
             });
+            
+            // 직접 입력 옵션 추가
+            const directOption = document.createElement("option");
+            directOption.value = "direct";
+            directOption.textContent = "📝 직접 입력";
+            studentSelect.appendChild(directOption);
         }
 
-        document.getElementById("btn").onclick = async () => {
-            let studentId = studentSelect.value;
-            const name = nameInput.value.trim();
+        gradeSelect.addEventListener("change", (e) => {
+            loadStudentsByGrade(e.target.value);
+        });
 
-            if (!studentId && !name) {
-                msg.innerText = "이름을 선택하거나 입력하세요.";
+        studentSelect.addEventListener("change", (e) => {
+            if (e.target.value === "direct") {
+                nameInput.classList.add("show");
+                nameInput.focus();
+            } else {
+                nameInput.classList.remove("show");
+                nameInput.value = "";
+            }
+        });
+
+        document.getElementById("btn").onclick = async () => {
+            const timeCheck = checkTimeAllowed();
+            if (!timeCheck.allowed) {
+                showMessage(timeCheck.message, "info");
                 return;
             }
 
-            if (!studentId) {
+            let studentId = studentSelect.value;
+            const name = nameInput.value.trim();
+            const selectedGrade = gradeSelect.value;
+
+            if (studentId === "direct" && !name) {
+                showMessage("이름을 입력하세요.", "error");
+                return;
+            }
+
+            if (!studentId || studentId === "") {
+                showMessage("학생을 선택하세요.", "error");
+                return;
+            }
+
+            if (studentId === "direct") {
+                // 새 학생 추가
                 const { data } = await supabase
                     .from("students")
-                    .insert({ name })
+                    .insert({ 
+                        name,
+                        grade: selectedGrade || null
+                    })
                     .select()
                     .single();
                 studentId = data.id;
@@ -74,12 +262,17 @@
                     onConflict: "student_id,attend_date"
                 });
 
-            msg.innerText = error
-                ? "출석 실패"
-                : "출석 완료!";
+            if (error) {
+                showMessage("출석 실패", "error");
+            } else {
+                showMessage("출석 완료! 🎉 잠시 후 현황 페이지로 이동합니다...", "success");
+                setTimeout(() => {
+                    location.href = `mystats.html?id=${studentId}`;
+                }, 1500);
+            }
         };
 
-        loadStudents();
+        loadGrades();
     </script>
 </body>
 </html>

@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>나의 출석 현황</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 500px;
+            width: 100%;
+        }
+        h2 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 24px;
+        }
+        .stats-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            padding: 25px;
+            color: white;
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        .stats-number {
+            font-size: 48px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .stats-label {
+            font-size: 18px;
+            opacity: 0.9;
+        }
+        .hearts-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin: 25px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 15px;
+        }
+        .heart {
+            font-size: 30px;
+            animation: heartBeat 1.5s infinite;
+        }
+        @keyframes heartBeat {
+            0%, 100% { transform: scale(1); }
+            10%, 30% { transform: scale(1.1); }
+            20%, 40% { transform: scale(1); }
+        }
+        .message-box {
+            background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: 500;
+            color: #2d3436;
+            margin: 20px 0;
+            box-shadow: 0 5px 15px rgba(253, 203, 110, 0.3);
+        }
+        .btn-back {
+            width: 100%;
+            padding: 15px;
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 20px;
+        }
+        .btn-back:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+        .loading {
+            text-align: center;
+            color: #667eea;
+            font-size: 18px;
+            padding: 40px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>📊 나의 출석 현황</h2>
+        <div id="content" class="loading">로딩 중...</div>
+    </div>
+
+    <script type="module">
+        import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+
+        const SUPABASE_URL = "https://ketjtbjvtiveyswigtxb.supabase.co";
+        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtldGp0Ymp2dGl2ZXlzd2lndHhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2MTA0NTcsImV4cCI6MjA4NTE4NjQ1N30.3cUg9ZJM5Qf_VJAWvJgArPsG0XAXH7qigEAeJeDroOY";
+
+        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        const encouragementMessages = [
+            "정말 잘하고 있어요! 🌟",
+            "하나님께서 기뻐하십니다! 💝",
+            "꾸준함이 최고의 열매입니다! 🎯",
+            "당신의 열정이 빛납니다! ✨",
+            "오늘도 함께해 주셔서 감사해요! 🙏",
+            "믿음의 발걸음이 아름답습니다! 🌈",
+            "계속 이렇게 나아가세요! 🚀",
+            "주님의 사랑이 함께하길! 💖",
+            "최고예요! 계속 파이팅! 💪",
+            "당신은 소중한 사람입니다! 🌺"
+        ];
+
+        function getRandomMessage() {
+            return encouragementMessages[Math.floor(Math.random() * encouragementMessages.length)];
+        }
+
+        async function loadStats() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const studentId = urlParams.get('id');
+
+            if (!studentId) {
+                document.getElementById('content').innerHTML = `
+                    <p style="color: #dc3545; text-align: center;">학생 정보를 찾을 수 없습니다.</p>
+                    <button class="btn-back" onclick="location.href='checkin.html'">돌아가기</button>
+                `;
+                return;
+            }
+
+            const currentYear = new Date().getFullYear();
+
+            const { data: attendanceData } = await supabase
+                .from("attendance")
+                .select("attend_date")
+                .eq("student_id", studentId)
+                .gte("attend_date", `${currentYear}-01-01`)
+                .lte("attend_date", `${currentYear}-12-31`)
+                .order("attend_date");
+
+            const { data: studentData } = await supabase
+                .from("students")
+                .select("name")
+                .eq("id", studentId)
+                .single();
+
+            const attendanceCount = attendanceData?.length || 0;
+            const hearts = '❤️'.repeat(attendanceCount);
+
+            document.getElementById('content').innerHTML = `
+                <div class="stats-box">
+                    <div class="stats-label">${studentData?.name || '학생'}님의</div>
+                    <div class="stats-number">${attendanceCount}번째</div>
+                    <div class="stats-label">출석입니다!</div>
+                </div>
+
+                <div class="hearts-container">
+                    ${attendanceCount > 0 ? hearts.split('').map((h, i) => 
+                        `<span class="heart" style="animation-delay: ${i * 0.1}s">${h}</span>`
+                    ).join('') : '<p style="color: #6c757d;">아직 출석 기록이 없습니다</p>'}
+                </div>
+
+                <div class="message-box">
+                    ${getRandomMessage()}
+                </div>
+
+                <button class="btn-back" onclick="location.href='checkin.html'">출석 체크로 돌아가기</button>
+            `;
+        }
+
+        loadStats();
+    </script>
+</body>
+</html>
