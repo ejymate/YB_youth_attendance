@@ -8,50 +8,138 @@
         body {
             font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
             margin: 24px;
+            background: #f8f9fa;
         }
 
         h2 {
             margin-bottom: 6px;
+            color: #333;
         }
 
         .row {
             margin: 10px 0;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
         }
 
         select, input, button {
-            padding: 6px 10px;
-            margin-right: 6px;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        button:hover {
+            background: #5568d3;
+        }
+
+        .summary {
+            display: flex;
+            gap: 15px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        .summary-card {
+            background: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            min-width: 120px;
+        }
+
+        .summary-card .label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .summary-card .value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .summary-card.present .value {
+            color: #28a745;
+        }
+
+        .summary-card.absent .value {
+            color: #dc3545;
+        }
+
+        .summary-card.total .value {
+            color: #667eea;
+        }
+
+        label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
         }
 
         table {
             border-collapse: collapse;
             width: 100%;
             margin-top: 14px;
+            background: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
         th, td {
             border: 1px solid #ddd;
-            padding: 6px;
+            padding: 10px;
             text-align: center;
         }
 
         th {
-            background: #f5f5f5;
+            background: #667eea;
+            color: white;
+            font-weight: 600;
         }
 
         .present {
-            color: green;
+            color: #28a745;
             font-weight: 700;
         }
 
         .absent {
-            color: #999;
+            color: #dc3545;
+        }
+
+        .time {
+            font-size: 12px;
+            color: #666;
         }
 
         .btn {
             cursor: pointer;
-            padding: 4px 8px;
+            padding: 6px 12px;
             font-size: 13px;
+            border-radius: 4px;
+        }
+
+        .btn-download {
+            background: #28a745;
+            margin-left: auto;
+        }
+
+        .btn-download:hover {
+            background: #218838;
         }
     </style>
 </head>
@@ -68,8 +156,16 @@
             <option value="">전체</option>
         </select>
 
+        <label>
+            <input type="checkbox" id="absentOnly" />
+            결석자만 보기
+        </label>
+
         <button id="btnSearch">조회</button>
+        <button id="btnDownload" class="btn-download">📥 CSV 다운로드</button>
     </div>
+
+    <div class="summary" id="summary"></div>
 
     <table>
         <thead>
@@ -78,6 +174,7 @@
                 <th>학년</th>
                 <th>반</th>
                 <th>출석 여부</th>
+                <th>출석 시간</th>
                 <th>관리</th>
             </tr>
         </thead>
@@ -101,6 +198,11 @@
         const dateInput = document.getElementById("dateInput");
         const gradeFilter = document.getElementById("gradeFilter");
         const btnSearch = document.getElementById("btnSearch");
+        const btnDownload = document.getElementById("btnDownload");
+        const absentOnly = document.getElementById("absentOnly");
+        const summary = document.getElementById("summary");
+
+        let currentData = [];
 
         /*********************************************************
          * 유틸
@@ -110,6 +212,14 @@
                 new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" })
             );
             return d.toISOString().slice(0, 10);
+        }
+
+        function formatTime(isoString) {
+            if (!isoString) return "-";
+            const d = new Date(isoString);
+            const hours = d.getHours().toString().padStart(2, '0');
+            const minutes = d.getMinutes().toString().padStart(2, '0');
+            return `${hours}:${minutes}`;
         }
 
         dateInput.value = todayKST();
@@ -128,13 +238,37 @@
                 return;
             }
 
-            const grades = [...new Set(data.map(d => d.grade))];
+            const grades = [...new Set(data.map(d => d.grade))].sort();
             grades.forEach(g => {
                 const opt = document.createElement("option");
                 opt.value = g;
                 opt.textContent = g;
                 gradeFilter.appendChild(opt);
             });
+        }
+
+        /*********************************************************
+         * 출석 요약 표시
+         *********************************************************/
+        function displaySummary(data) {
+            const presentCount = data.filter(s => s.isPresent).length;
+            const absentCount = data.filter(s => !s.isPresent).length;
+            const totalCount = data.length;
+
+            summary.innerHTML = `
+                <div class="summary-card present">
+                    <div class="label">출석</div>
+                    <div class="value">${presentCount}명</div>
+                </div>
+                <div class="summary-card absent">
+                    <div class="label">결석</div>
+                    <div class="value">${absentCount}명</div>
+                </div>
+                <div class="summary-card total">
+                    <div class="label">전체</div>
+                    <div class="value">${totalCount}명</div>
+                </div>
+            `;
         }
 
         /*********************************************************
@@ -145,54 +279,114 @@
 
             const date = dateInput.value;
             const grade = gradeFilter.value;
+            const showAbsentOnly = absentOnly.checked;
 
-            let query = supabase
+            // 1. 학생 목록 조회
+            let studentQuery = supabase
                 .from("students")
-                .select(`
-            id,
-            name,
-            grade,
-            class_name,
-            attendance(attend_date)
-          `)
+                .select("id, name, grade, class_name")
                 .eq("is_active", true);
 
             if (grade) {
-                query = query.eq("grade", grade);
+                studentQuery = studentQuery.eq("grade", grade);
             }
 
-            const { data, error } = await query.order("name");
-            if (error) {
-                alert("조회 오류: " + error.message);
+            const { data: students, error: studentError } = await studentQuery.order("name");
+            
+            if (studentError) {
+                alert("조회 오류: " + studentError.message);
                 return;
             }
 
-            if (data.length === 0) {
-                tbody.innerHTML =
-                    `<tr><td colspan="5">조회된 학생이 없습니다.</td></tr>`;
+            if (students.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6">조회된 학생이 없습니다.</td></tr>`;
+                summary.innerHTML = "";
                 return;
             }
 
-            data.forEach(student => {
-                const isPresent =
-                    student.attendance.some(a => a.attend_date === date);
+            // 2. 해당 날짜의 출석 기록 조회
+            const { data: attendanceRecords, error: attendanceError } = await supabase
+                .from("attendance")
+                .select("student_id, attend_time")
+                .eq("attend_date", date);
 
+            if (attendanceError) {
+                alert("출석 기록 조회 오류: " + attendanceError.message);
+                return;
+            }
+
+            // 3. 출석 기록을 Map으로 변환
+            const attendanceMap = new Map();
+            attendanceRecords.forEach(record => {
+                attendanceMap.set(record.student_id, record.attend_time);
+            });
+
+            // 4. 학생 데이터와 출석 기록 결합
+            currentData = students.map(student => ({
+                ...student,
+                isPresent: attendanceMap.has(student.id),
+                attendTime: attendanceMap.get(student.id) || null
+            }));
+
+            // 5. 결석자만 보기 필터
+            const filteredData = showAbsentOnly 
+                ? currentData.filter(s => !s.isPresent)
+                : currentData;
+
+            // 6. 요약 표시
+            displaySummary(currentData);
+
+            // 7. 테이블 렌더링
+            if (filteredData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6">조회된 학생이 없습니다.</td></tr>`;
+                return;
+            }
+
+            filteredData.forEach(student => {
                 const tr = document.createElement("tr");
                 tr.innerHTML = `
-            <td>${student.name}</td>
-            <td>${student.grade || ""}</td>
-            <td>${student.class_name || ""}</td>
-            <td class="${isPresent ? "present" : "absent"}">
-              ${isPresent ? "출석" : "결석"}
-            </td>
-            <td>
-              <button class="btn" data-id="${student.id}" data-present="${isPresent}">
-                ${isPresent ? "결석 처리" : "출석 처리"}
-              </button>
-            </td>
-          `;
+                    <td>${student.name}</td>
+                    <td>${student.grade || ""}</td>
+                    <td>${student.class_name || ""}</td>
+                    <td class="${student.isPresent ? "present" : "absent"}">
+                        ${student.isPresent ? "출석" : "결석"}
+                    </td>
+                    <td class="time">${formatTime(student.attendTime)}</td>
+                    <td>
+                        <button class="btn" data-id="${student.id}" data-present="${student.isPresent}">
+                            ${student.isPresent ? "결석 처리" : "출석 처리"}
+                        </button>
+                    </td>
+                `;
                 tbody.appendChild(tr);
             });
+        }
+
+        /*********************************************************
+         * CSV 다운로드
+         *********************************************************/
+        function downloadCSV() {
+            const date = dateInput.value;
+            const headers = ['이름', '학년', '반', '출석여부', '출석시간'];
+            const rows = currentData.map(s => [
+                s.name,
+                s.grade || '',
+                s.class_name || '',
+                s.isPresent ? '출석' : '결석',
+                formatTime(s.attendTime)
+            ]);
+
+            const csvContent = [
+                headers.join(','),
+                ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+            ].join('\n');
+
+            const BOM = '\uFEFF';
+            const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `출석부_${date}.csv`;
+            link.click();
         }
 
         /*********************************************************
@@ -217,10 +411,11 @@
                 // 출석 처리
                 await supabase
                     .from("attendance")
-                    .upsert(
-                        { student_id: studentId, attend_date: date },
-                        { onConflict: "student_id,attend_date" }
-                    );
+                    .insert({
+                        student_id: studentId,
+                        attend_date: date,
+                        source: "admin_manual"
+                    });
             }
 
             loadData();
@@ -230,8 +425,10 @@
          * 이벤트 바인딩
          *********************************************************/
         btnSearch.addEventListener("click", loadData);
+        btnDownload.addEventListener("click", downloadCSV);
         gradeFilter.addEventListener("change", loadData);
         dateInput.addEventListener("change", loadData);
+        absentOnly.addEventListener("change", loadData);
 
         /*********************************************************
          * 초기 로딩
